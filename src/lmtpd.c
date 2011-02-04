@@ -18,9 +18,14 @@
  *
  */
 
+#include <errno.h>
+#include <stdio.h>
 #include <getopt.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <time.h>
+#include <ctype.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -130,9 +135,6 @@ int main(int argc, char **argv)
                  */
         }
     }
-
-
-
 
     redirect_log(log_file);
 
@@ -471,14 +473,14 @@ static void convert_new_line(char *d)
 int64_t show_help(void)
 {
     fprintf(stderr, "\nOptions:\n\n");
-    fprintf("-f, --log_file\n");
-    fprintf("-p, --port\n");
-    fprintf("-x, --anyhost\n");
-    fprintf("-r, --root_alias\n");
-    fprintf("-m, --mbox_dir\n");
-    fprintf("-v, --help\n");
-    fprintf("-v, --licence\n");
-    fprintf("-v, --version\n");
+    fprintf(stderr, "-f, --log_file\n");
+    fprintf(stderr, "-p, --port\n");
+    fprintf(stderr, "-x, --anyhost\n");
+    fprintf(stderr, "-r, --root_alias\n");
+    fprintf(stderr, "-m, --mbox_dir\n");
+    fprintf(stderr, "-v, --help\n");
+    fprintf(stderr, "-v, --licence\n");
+    fprintf(stderr, "-v, --version\n");
 
     return EXIT_SUCCESS;
 }

@@ -24,6 +24,8 @@
 #define NAME "lmtpd"
 #define VERSION "201009"
 
+#include <inttypes.h>
+#include <stdbool.h>
 
 /*
  * config file parameter names and defaults
