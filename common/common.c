@@ -1,6 +1,6 @@
 /*
  * Common code shared between projects
- * Copyright (c) 2009-2010, albinoloverats ~ Software Development
+ * Copyright (c) 2009-2011, albinoloverats ~ Software Development
  * email: webmaster@albinoloverats.net
  *
  * This program is free software: you can redistribute it and/or modify
@@ -20,31 +20,39 @@
 
 #include "common.h"
 
-static bool  c_sig = false;
-static char *c_app = NULL;
-static char *c_ver = NULL;
-static FILE *LOG_FILE = NULL;
+#include <stdarg.h>
+#include <string.h>
+#include <stdbool.h>
+#include <signal.h>
+#include <ctype.h>
+#include <errno.h>
+#include <time.h>
 
-extern void init(const char * const restrict a, const char * const restrict v, const char * const restrict f)
+static bool c_sig = false;
+/*@null@*/static char *c_app = NULL;
+/*@null@*/static char *c_ver = NULL;
+/*@null@*/static FILE *LOG_FILE = NULL;
+
+extern void init3(const char * const restrict a, const char * const restrict v, const char * const restrict f)
 {
     errno = 0;
     if (c_app)
         return;
-    c_app = strdup(a);
-    c_ver = strdup(v);
+    /*@i1@*/c_app = strdup(a);
+    /*@i1@*/c_ver = strdup(v);
     if ((signal(SIGTERM, sigint) == SIG_ERR) || (signal(SIGINT, sigint) == SIG_ERR) || (signal(SIGQUIT, sigint) == SIG_ERR))
-        die(_("could not set signal handler"));
-    /*
-     * set locale
-     */
+        /*@i1@*/die(_("could not set signal handler"));
 #if 0
     setlocale(LC_ALL, "");
     bindtextdomain(c_app, "/usr/share/locale");
     textdomain(c_app);
 #endif
+    /*
+     * log to a file if we can, else revert to stderr
+     */
     if (f)
         redirect_log(f);
-    else
+    if (!LOG_FILE)
         LOG_FILE = stderr;
     return;
 }
@@ -60,7 +68,7 @@ extern void redirect_log(const char * const restrict f)
         LOG_FILE = stderr;
 }
 
-extern list_t *config(const char * const restrict f)
+/*@null@*/extern list_t *config(const char * const restrict f)
 {
     FILE *file = fopen(f, "r");
     if (!file)
@@ -68,8 +76,8 @@ extern list_t *config(const char * const restrict f)
         msg(_("could not open configuration file %s"), f);
         return NULL;
     }
-
-    list_t *list = list_create();
+ 
+    list_t *list = list_create(NULL);
     char  *line = NULL;
     size_t size = 0;
     while (getline(&line, &size, file) >= 0)
@@ -109,7 +117,7 @@ extern int64_t show_version(void)
 
 extern void hex(void *v, uint64_t l)
 {
-    uint8_t *s = v;
+    const uint8_t * const s = v;
     char b[HEX_LINE_WIDTH] = { 0x00 };
     uint8_t c = 1;
     for (uint64_t i = 0; i < l; i++, c++)
@@ -125,13 +133,13 @@ extern void hex(void *v, uint64_t l)
     msg("%s", b);
 }
 
-extern void msg(const char *s, ...)
+extern void msg(const char * const restrict s, ...)
 {
     if (!s)
     {
         if (errno)
         {
-            char *e = strdup(strerror(errno));
+            char * const restrict e = strdup(strerror(errno));
             for (uint32_t i = 0; i < strlen(e); i++)
                 e[i] = tolower(e[i]);
             msg("%s", e);
@@ -150,13 +158,13 @@ extern void msg(const char *s, ...)
     va_end(ap);
 }
 
-extern void die(const char *s, ...)
+extern void die(const char * const restrict s, ...)
 {
     if (s)
-        msg(s);
+        msg("%s", s);
     if (errno)
     {
-        char *e = strdup(strerror(errno));
+        char * const restrict e = strdup(strerror(errno));
         for (uint32_t i = 0; i < strlen(e); i++)
             e[i] = tolower(e[i]);
         msg("%s", e);
@@ -172,7 +180,7 @@ extern void sigint(int s)
         errno = ECANCELED;
         die(NULL);
     }
-    char *ss = NULL;
+    char * restrict ss = NULL;
     switch (s)
     {
         case SIGTERM:
@@ -193,7 +201,7 @@ extern void sigint(int s)
     c_sig = true;
 }
 
-extern void wait_timeout(uint32_t s)
+extern void chill(uint32_t s)
 {
     div_t a = div(s, 1000);
     struct timespec t = { a.quot, a.rem * 10 };
@@ -201,13 +209,11 @@ extern void wait_timeout(uint32_t s)
     nanosleep(&t, &r);
 }
 
-#if 0
 extern ssize_t getline(char **lineptr, size_t *n, FILE *stream)
 {
     size_t r = 0;
     uint32_t step = 0xFF;
     char *buffer = malloc(step);
-    
     for (r = 0; ; r++)
     {
         int c = fgetc(stream);
@@ -226,7 +232,5 @@ extern ssize_t getline(char **lineptr, size_t *n, FILE *stream)
         free(*lineptr);
     *lineptr = buffer;
     *n = r;
-
     return r;
 }
-#endif
