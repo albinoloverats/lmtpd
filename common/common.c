@@ -22,7 +22,6 @@
 
 #include <stdarg.h>
 #include <string.h>
-#include <stdbool.h>
 #include <signal.h>
 #include <ctype.h>
 #include <errno.h>
@@ -68,6 +67,44 @@ extern void redirect_log(const char * const restrict f)
         LOG_FILE = stderr;
 }
 
+extern list_t *parse_args(char **v, list_t *a)
+{
+    list_t *x = list_create(NULL);
+    uint16_t expected = list_size(a);
+    for (uint16_t i = 1; ; i++) 
+    {
+        if (!v[i])
+            break;
+        bool found = false;
+        for (uint16_t j = 0; j < expected && !found; j++)
+        {
+            args_t *arg = list_get(a, j);
+            if (strlen(v[i]) == 2)
+            {
+                if (*(v[i]) == '-' && *(v[i] + 1) == arg->short_option)
+                    found = true;
+            }
+            else
+            {
+                if (!strncmp(v[i], "--", 2) && !strcmp(v[i] + 2, arg->long_option))
+                    found = true;
+            }
+            if (found)
+            {
+                if (arg->has_option)
+                {
+                    i++;
+                    arg->option = strdup(v[i]);
+                }
+                arg->found = true;
+            }
+        }
+        if (!found)
+            list_append(&x, v[i]);
+    }
+    return x;
+}
+
 /*@null@*/extern list_t *config(const char * const restrict f)
 {
     FILE *file = fopen(f, "r");
@@ -105,7 +142,7 @@ extern int64_t show_licence(void)
 extern int64_t show_usage(void)
 {
     fprintf(stderr, _("Usage:\n"));
-    fprintf(stderr, _("  %s [OPTION] [ARGUMENT] ...\n"), c_app);
+    fprintf(stderr, _("  %s [OPTION]...\n"), c_app);
     return EXIT_SUCCESS;
 }
 
@@ -150,7 +187,8 @@ extern void msg(const char * const restrict s, ...)
     va_list ap;
     va_start(ap, s);
     flockfile(LOG_FILE);
-    fprintf(LOG_FILE, "\r%s: ", c_app);
+    if (LOG_FILE == stderr)
+        fprintf(LOG_FILE, "\r%s: ", c_app);
     vfprintf(LOG_FILE, s, ap);
     fprintf(LOG_FILE, "\n");
     fflush(LOG_FILE);
@@ -161,7 +199,7 @@ extern void msg(const char * const restrict s, ...)
 extern void die(const char * const restrict s, ...)
 {
     if (s)
-        msg("%s", s);
+        msg(s);
     if (errno)
     {
         char * const restrict e = strdup(strerror(errno));
@@ -209,6 +247,7 @@ extern void chill(uint32_t s)
     nanosleep(&t, &r);
 }
 
+#ifndef _GNU_SOURCE
 extern ssize_t getline(char **lineptr, size_t *n, FILE *stream)
 {
     size_t r = 0;
@@ -234,3 +273,4 @@ extern ssize_t getline(char **lineptr, size_t *n, FILE *stream)
     *n = r;
     return r;
 }
+#endif
