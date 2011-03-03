@@ -1,13 +1,41 @@
-.PHONY: lmtpd clean
+.PHONY: clean distclean
 
-OPTIONS := -g -o lmtpd -std=c99 -Wall -Wextra -O0 -pipe -ldl -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -I ./
-COMMON  := common/common.c common/list.c src/lmtpd.c
+vpath %.c src
 
-lmtpd:
-# build the main executible
-	 @gcc $(OPTIONS) $(COMMON)
-	-@echo "compiled \`src/lmtpd.c common/common.c common/list.c' --> \`lmtpd'"
+common	 = common/clib.a
+obj      = lmtpd.o
+app      = lmtpd
+
+conf     = lmtpd.conf
+
+CFLAGS   = -Wall -Wextra -Wno-unused-parameter -O0 -std=gnu99 -c -ggdb -o
+CPPFLAGS = -I. -Isrc -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
+LDFLAGS  = -r -o
+
+all: $(obj) $(common)
+	@$(CC) -o $(app) $(obj) $(common)
+	@echo "built \`$(obj) $(common)' --> \`$(app)'"
+
+%.o: %.c
+	@$(CC) $(CPPFLAGS) $(CFLAGS) $@ $<
+	@echo "compiled \`$<' --> \`$@'"
+
+$(common):
+	@$(MAKE) -C common
+
+install:
+	 @install -c -m 755 -s -D -T $(app) $(PREFIX)/usr/bin/$(app)
+	-@echo "installed \`$(app)' --> \`$(PREFIX)/usr/bin/$(app)'"
+	 @install -c -m 644 -D -T $(conf) $(PREFIX)/etc/$(conf)
+	-@echo "installed \`$(conf)' --> \`$(PREFIX)/etc/$(conf)'"
+
+uninstall:
+	-@echo "TODO!!!"
 
 clean:
-	-@rm -fv lmtpd
+	-@rm -fv $(obj)
+	@$(MAKE) -C common clean
 
+distclean: clean
+	-@rm -fv $(app)
+	@$(MAKE) -C common distclean
