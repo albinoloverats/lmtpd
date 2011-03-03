@@ -19,7 +19,6 @@
  */
 
 #include <errno.h>
-#include <stdio.h>
 #include <getopt.h>
 #include <fcntl.h>
 #include <pwd.h>
@@ -45,7 +44,7 @@ static int64_t lock_file = 0;
 
 int main(int argc, char **argv)
 {
-    init(NAME, VERSION, NULL);
+    init(NAME, VERSION);
 
     /*
      *get hold of lock file

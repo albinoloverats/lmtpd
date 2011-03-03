@@ -22,7 +22,7 @@
 #define _LMTPD_H_
 
 #define NAME "lmtpd"
-#define VERSION "201009"
+#define VERSION "201103"
 
 #include <inttypes.h>
 #include <stdbool.h>
