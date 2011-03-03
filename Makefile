@@ -8,9 +8,9 @@ app      = lmtpd
 
 conf     = lmtpd.conf
 
-CFLAGS   = -Wall -Wextra -Wno-unused-parameter -O0 -std=gnu99 -c -ggdb -o
+CFLAGS   = -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu99 -c -o
 CPPFLAGS = -I. -Isrc -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
-LDFLAGS  = -r -o
+LDFLAGS  = -r -s -o
 
 all: $(obj) $(common)
 	@$(CC) -o $(app) $(obj) $(common)
