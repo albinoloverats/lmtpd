@@ -2,44 +2,45 @@
 
 vpath %.c src
 
-common	 = common/clib.a
-obj      = lmtpd.o
-app      = lmtpd
+APP      = lmtpd
+OBJ      = lmtpd.o common/common.o common/list.o common/logging.o
+COMMON   = common.o list.o logging.o
 
-conf     = lmtpd.conf
-init_s   = lmtpd
-init_l   = lmtpd.init
+CONF     = lmtpd.conf
+INIT_S   = lmtpd
+INIT_L   = lmtpd.init
 
-CFLAGS   = -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu99 -c -o
+CFLAGS   = -Wall -Wextra -Wno-unused-parameter -O0 -std=gnu99 `libgcrypt-config --cflags` -c -ggdb -o
 CPPFLAGS = -I. -Isrc -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
-LDFLAGS  = -r -s -o
+LDFLAGS  = -r -o
 
-all: $(obj) $(common)
-	@$(CC) -o $(app) $(obj) $(common)
-	@echo "built \`$(obj) $(common)' --> \`$(app)'"
+$(APP): $(OBJ) common
+	@$(CC) -o $(APP) $(OBJ)
+	@echo "built \`$(OBJ)' --> \`$(APP)'"
 
 %.o: %.c
 	@$(CC) $(CPPFLAGS) $(CFLAGS) $@ $<
 	@echo "compiled \`$<' --> \`$@'"
 
 $(common):
-	@$(MAKE) -C common
+	@$(MAKE) -C common $(COMMON)
+
 
 install:
-	 @install -c -m 755 -s -D -T $(app) $(PREFIX)/usr/sbin/$(app)
-	-@echo "installed \`$(app)' --> \`$(PREFIX)/usr/sbin/$(app)'"
-	 @install -c -m 644 -D -T $(conf) $(PREFIX)/etc/$(conf)
-	-@echo "installed \`$(conf)' --> \`$(PREFIX)/etc/$(conf)'"
-	 @install -c -m 755 -D -T $(init_l) $(PREFIX)/etc/rc.d/$(init_s)
-	-@echo "installed \`$(init_l)' --> \`$(PREFIX)/etc/rc.d/$(init_s)'"
+	 @install -c -m 755 -s -D -T $(APP) $(PREFIX)/usr/sbin/$(APP)
+	-@echo "installed \`$(APP)' --> \`$(PREFIX)/usr/sbin/$(APP)'"
+	 @install -c -m 644 -D -T $(CONF) $(PREFIX)/etc/$(CONF)
+	-@echo "installed \`$(CONF)' --> \`$(PREFIX)/etc/$(CONF)'"
+	 @install -c -m 755 -D -T $(INIT_L) $(PREFIX)/etc/rc.d/$(INIT_S)
+	-@echo "installed \`$(INIT_L)' --> \`$(PREFIX)/etc/rc.d/$(INIT_S)'"
 
 uninstall:
 	-@echo "TODO!!!"
 
 clean:
-	-@rm -fv $(obj)
+	-@rm -fv $(OBJ)
 	@$(MAKE) -C common clean
 
 distclean: clean
-	-@rm -fv $(app)
+	-@rm -fv $(APP)
 	@$(MAKE) -C common distclean
