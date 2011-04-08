@@ -45,7 +45,7 @@
         void *object;        /*!< Pointer to this item in the list */
         struct list_t *prev; /*!< Pointer to previous list item */
         struct list_t *next; /*!< Pointer to next list item */
-    }
+    } __attribute__((aligned))
     list_t;
 
     /*!
@@ -58,7 +58,7 @@
     typedef struct compare_id_t
     {
         uintptr_t id; /*!< ID used for object comparison */
-    }
+    } __attribute__((aligned))
     compare_id_t;
 
     /*!
@@ -113,10 +113,11 @@
      * \brief         Remove i'th object from a list
      * \param[in]  l  Remove element from the list
      * \param[in]  i  The index of the object
+     * \return        The data that was stored at this point in the list
      *
      * Remove the object (at the given position within the list) from the list
      */
-    extern void list_remove(list_t **l, const uint64_t i) __attribute__((nonnull(1)));
+    extern void *list_remove(list_t **l, const uint64_t i) __attribute__((nonnull(1)));
 
     /*!
      * \brief         Move to the i'th object from the list
