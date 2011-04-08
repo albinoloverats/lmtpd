@@ -24,6 +24,8 @@
 #define NAME "lmtpd"
 #define VERSION "201103"
 
+#define HELP_INFO "TODO ..."
+
 #include <inttypes.h>
 #include <stdbool.h>
 
@@ -41,6 +43,9 @@
 #define CONF_LOCAL "localhost_only"
 #define DEFAULT_LOCAL true
 
+#define CONF_DAEMON "daemonize"
+#define DEFAULT_DAEMON true
+
 #define CONF_ROOT "root_alias"
 #define DEFAULT_ROOT "root"
 
@@ -50,8 +55,8 @@
 /*
  * misc constants
  */
-#define RUN_DIR "/var/run"
-#define LOCK_FILE RUN_DIR "/lmtpd.lock"
+#define RUN_DIR "/var/lock/"
+#define LOCK_FILE RUN_DIR "lmtpd"
 
 #define LOCALHOST "127.0.0.1"
 #define BUFFER 1024
@@ -82,7 +87,7 @@
 /*
  * functions
  */
-static void lmtpd_daemonize(uint16_t, bool);
+static void lmtpd_daemonize(bool, uint16_t, bool);
 static void lmtpd_wait(int);
 static void lmtpd_stop(int);
 

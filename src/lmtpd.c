@@ -18,23 +18,28 @@
  *
  */
 
-#include <errno.h>
-#include <getopt.h>
-#include <fcntl.h>
-#include <pwd.h>
-#include <time.h>
+#include <stdio.h>
 #include <ctype.h>
 #include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <time.h>
+
+#include <pwd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "common/common.h"
-#include "common/list.h"
 #include "src/lmtpd.h"
+
+#include "common/common.h"
+#include "common/logging.h"
+#include "common/list.h"
 
 static char *root_alias = DEFAULT_ROOT;
 static char *mbox_dir = DEFAULT_MBOX;
@@ -44,7 +49,26 @@ static int64_t lock_file = 0;
 
 int main(int argc, char **argv)
 {
-    init(NAME, VERSION);
+    /*
+     * handle command line arguments
+     */
+    args_t o_logfile    = {'f', CONF_LOG ,   false, true,  NULL, "Log file to send messages to"};
+    args_t o_port       = {'p', CONF_PORT,   false, true,  NULL, "Local port to listen on"};
+    args_t o_local_only = {'x', CONF_LOCAL,  false, false, NULL, "Force localhost connections only; this is the default"};
+    args_t o_daemonize  = {'b', CONF_DAEMON, false, false, NULL, "Background/Daemonize process; this is the default"};
+    args_t alias        = {'r', CONF_ROOT,   false, true,  NULL, "Root alias - who should receive roots mail"};
+    args_t mbox         = {'m', CONF_MBOX,   false, true,  NULL, "Alternative mbox directory"};
+
+    list_t *opts = list_create(NULL);
+
+    list_append(&opts, &o_logfile);
+    list_append(&opts, &o_port);
+    list_append(&opts, &o_local_only);
+    list_append(&opts, &o_daemonize);
+    list_append(&opts, &alias);
+    list_append(&opts, &mbox);
+
+    init(NAME, VERSION, argv, CONFIG_FILE, opts, HELP_INFO);
 
     /*
      *get hold of lock file
@@ -53,91 +77,22 @@ int main(int argc, char **argv)
     if (lock_file < 0)
         die("cannot acquire file lock, check %s isn't already running and try again", NAME);
 
+    if (alias.found)
+        root_alias = strdup(alias.option);
+    if (mbox.found)
+        mbox_dir = strdup(mbox.option);
+
+    char *logfile = o_logfile.found ? o_logfile.option : DEFAULT_LOG;
+
+    bool daemonize = o_daemonize.found ? !DEFAULT_DAEMON : DEFAULT_DAEMON;
+    if (!daemonize)
+        logfile = NULL; /* we're not backgrounding, log to stderr */
+
+    log_redirect(logfile);
+
     chdir(RUN_DIR);
 
-    uint16_t port = DEFAULT_PORT;
-    bool local_only = DEFAULT_LOCAL;
-    char *log_file = DEFAULT_LOG;
-
-    list_t *opts = config(CONFIG_FILE);
-    list_t *x = opts;
-    uint64_t i = 0;
-    while (true)
-    {
-        conf_t *c = (conf_t *)x->object;
-        if (!strcmp(CONF_LOG, c->option))
-            log_file = c->value;
-        else if (!strcmp(CONF_PORT, c->option))
-            port = (uint16_t)strtol(c->value, NULL, 0);
-        else if (!strcmp(CONF_LOCAL, c->option))
-        {
-            if (!strcmp(FALSE, c->value))
-                local_only = false;
-        }
-        else if (!strcmp(CONF_ROOT, c->option))
-            root_alias = c->value;
-        else if (!strcmp(CONF_MBOX, c->option))
-            mbox_dir = c->value;
-        x = x->next;
-        if (!x)
-            break;
-        i++;
-    }
-#if 0
-    list_delete(&opts);
-#endif
-
-    while (true)
-    {
-        static struct option long_options[] =
-        {
-            {"log_file"  , required_argument, 0, 'f'},
-            {"port"      , required_argument, 0, 'p'},
-            {"anyhost"   ,       no_argument, 0, 'x'},
-            {"root_alias", required_argument, 0, 'r'},
-            {"mbox_dir"  , required_argument, 0, 'm'},
-            {"help"      ,       no_argument, 0, 'h'},
-            {"licence"   ,       no_argument, 0, 'l'},
-            {"version"   ,       no_argument, 0, 'v'},
-            {0, 0, 0, 0}
-        };
-        int32_t optex = 0;
-        int32_t opt = getopt_long(argc, argv, "f:p:xr:m:hlv", long_options, &optex);
-        if (opt < 0)
-            break;
-        switch (opt)
-        {
-            case 'g':
-                log_file = strdup(optarg);
-                break;
-            case 'p':
-                port = (uint16_t)strtol(optarg, NULL, 0);
-                break;
-            case 'x':
-                local_only = false;
-                break;
-            case 'r':
-                root_alias = strdup(optarg);
-                break;
-            case 'm':
-                mbox_dir = strdup(optarg);
-                break;
-            case 'l':
-                return show_licence();
-            case 'v':
-                return show_version();
-            case '?':
-            default:
-                die("unknown option %c", opt);
-                /*
-                 * it's worth noting that unknown options cause encrypt to bail
-                 */
-        }
-    }
-
-    redirect_log(log_file);
-
-    lmtpd_daemonize(port, local_only);
+    lmtpd_daemonize(daemonize, o_port.found ? strtol(o_port.option, NULL, 0) : DEFAULT_PORT, o_local_only.found ? !DEFAULT_LOCAL : DEFAULT_LOCAL);
 
     while (true)
         sleep(1);
@@ -145,9 +100,12 @@ int main(int argc, char **argv)
     return EXIT_SUCCESS;
 }
 
-static void lmtpd_daemonize(uint16_t port, bool local_only)
+static void lmtpd_daemonize(bool do_fork, uint16_t port, bool local_only)
 {
-    pid_t pid = fork();
+    pid_t pid = 0;
+
+    if (do_fork)
+        pid = fork();
     if (pid < 0)
         die("could not fork daemon process");
     else if (pid > 0)
@@ -178,7 +136,7 @@ static void lmtpd_daemonize(uint16_t port, bool local_only)
     if (listen(original_socket, 1) < 0)
         die("could not listen on socket");
 
-    msg("server up and running");
+    log_message(LOG_DEFAULT, "server up and running");
     while(true)
     {
         struct sockaddr_in client;
@@ -197,9 +155,10 @@ static void lmtpd_daemonize(uint16_t port, bool local_only)
                 continue;
             }
         }
-        msg("connection from %s:%hu", caddr, ntohs(client.sin_port));
+        log_message(LOG_DEFAULT, "connection from %s:%hu", caddr, ntohs(client.sin_port));
 
-        pid = fork();
+        if (do_fork)
+            pid = fork();
         if (pid < 0)
             die("could not fork daemon process");
         else if (pid > 0)
@@ -208,16 +167,17 @@ static void lmtpd_daemonize(uint16_t port, bool local_only)
         {
             close(original_socket);
             message_recieve(n);
-            msg("closed connection with %s:%hu", caddr, ntohs(client.sin_port));
+            log_message(LOG_DEFAULT, "closed connection with %s:%hu", caddr, ntohs(client.sin_port));
             close(n);
-            _exit(EXIT_SUCCESS);
+            if (do_fork)
+                _exit(EXIT_SUCCESS);
         }
     }
 }
 
 static void lmtpd_wait(int s)
 {
-    msg("waiting for child %i", s);
+    log_message(LOG_DEBUG, "waiting for child %i", s);
     while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
@@ -233,7 +193,7 @@ static void lmtpd_stop(int s)
             ss = strdup("SIGINT");
             break;
     }
-    msg("caught %s signal, closing gracefully", ss);
+    log_message(LOG_WARNING, "caught %s signal, closing gracefully", ss);
     close(original_socket);
     close(lock_file);
     unlink(LOCK_FILE);
@@ -284,7 +244,7 @@ static char *socket_read(int s, size_t *l)
         }
 
     }
-    msg("C: %s", d);
+    log_message(LOG_VERBOSE, "C: %s", d);
     return d;
 }
 
@@ -292,11 +252,12 @@ static void socket_send(int s, char *m)
 {
     char *d = NULL;
     asprintf(&d, "%s\r\n", m);
-    msg("S: %s", m);
+    log_message(LOG_VERBOSE, "S: %s", m);
     if (!d)
         die("out of memory @ %s:%i", __FILE__, __LINE__ - 2);
     if (write(s, d, strlen(d)) < 0)
         die("could not send data: %s", m);
+    free(d);
 }
 
 static void message_recieve(int32_t s)
@@ -319,8 +280,11 @@ static void message_recieve(int32_t s)
             if (isspace(cname[i]))
                 cname[i] = '\0';
         asprintf(&x, MESSAGE_250A, cname);
+        if (!x)
+            die("out of memory @ %s:%i", __FILE__, __LINE__ - 2);
         free(cname);
         socket_send(s, x);
+        free(x);
     }
     r = socket_read(s, &l);
     validate(MESSAGE_FROM, r);
@@ -328,10 +292,7 @@ static void message_recieve(int32_t s)
     free(r);
 
     /* ok, wait for recipients (loop until DATA) */
-    int rcp = 0;
-    char **rcpt = calloc(rcp + 1, sizeof( char * ));
-    if (!rcpt)
-        die("out of memory @ %s:%i", __FILE__, __LINE__ - 2);
+    list_t *rcpt = list_create(NULL);
     while (true)
     {
         socket_send(s, MESSAGE_250);
@@ -339,11 +300,7 @@ static void message_recieve(int32_t s)
         if (!strncmp(MESSAGE_DATA, r, strlen(MESSAGE_DATA)))
             break;
         validate(MESSAGE_RCPT, r);
-        rcpt[rcp] = extract_address(r);
-        rcp++;
-        char **x = realloc(rcpt, rcp * sizeof( char * ) + 1);
-        if (!x)
-            die("out of memory @ %s:%i", __FILE__, __LINE__ - 2);
+        list_append(&rcpt, extract_address(r));
         free(r);
     }
     free(r);
@@ -351,7 +308,7 @@ static void message_recieve(int32_t s)
     /* send 352, wait for .\n\r */
     socket_send(s, MESSAGE_354);
     char *data = NULL;
-    uint64_t dl = 0;
+    uint64_t dl = 1;
     while (true)
     {
         r = socket_read(s, &l);
@@ -375,14 +332,16 @@ static void message_recieve(int32_t s)
         free(r);
     }
     free(r);
-    convert_new_line(data);
-    data[dl] = '\0';
+    if (data)
+        convert_new_line(data);
+    data[dl - 1] = '\0';
 
     /* ok, wait for QUIT */
-    for (int i = 0; i < rcp; i++)
+    uint64_t rcpts = list_size(rcpt);
+    for (unsigned i = 0; i < rcpts; i++)
     {
         char *x = NULL;
-        asprintf(&x, MESSAGE_250C, rcpt[i]);
+        asprintf(&x, MESSAGE_250C, (char *)list_get(rcpt, i));
         socket_send(s, x);
         free(x);
     }
@@ -392,9 +351,13 @@ static void message_recieve(int32_t s)
     /* bye, close */
     socket_send(s, MESSAGE_221);
 
-    for (int i = 0; i < rcp; i++)
+    /*
+     * TODO if To: address contains @domain.example.com
+     * forward the message to an actual outbound mail hander
+     */
+    for (unsigned i = 0; i < rcpts; i++)
     {
-        char *usr = rcpt[i];
+        char *usr = list_get(rcpt, i);
         /* lookup the user; if root, find alias instead */
         if (!strcmp(ROOT, usr))
         {
@@ -418,10 +381,11 @@ static void message_recieve(int32_t s)
         fchown(mbox, uid, gid);
         fchmod(mbox, S_IRUSR | S_IWUSR);
         close(mbox);
-        free(rcpt[i]);
+        free(list_remove(&rcpt, i));
         free(mesg);
     }
-    free(rcpt);
+    list_delete(&rcpt);
+    free(from);
     free(data);
 }
 
@@ -466,20 +430,4 @@ static void convert_new_line(char *d)
     for (unsigned i = 0; i < strlen(d); i++)
         if (d[i] == '\r')
             d[i] = '\n';
-}
-
-
-int64_t show_help(void)
-{
-    fprintf(stderr, "\nOptions:\n\n");
-    fprintf(stderr, "-f, --log_file\n");
-    fprintf(stderr, "-p, --port\n");
-    fprintf(stderr, "-x, --anyhost\n");
-    fprintf(stderr, "-r, --root_alias\n");
-    fprintf(stderr, "-m, --mbox_dir\n");
-    fprintf(stderr, "-v, --help\n");
-    fprintf(stderr, "-v, --licence\n");
-    fprintf(stderr, "-v, --version\n");
-
-    return EXIT_SUCCESS;
 }
