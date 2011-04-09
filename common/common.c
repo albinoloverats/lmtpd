@@ -48,6 +48,9 @@ extern list_t *init6(const char * const restrict a, const char * const restrict 
     bindtextdomain(c_app, "/usr/share/locale");
     textdomain(c_app);
 #endif
+    /*
+     * TODO move command line and config file parsing into own component
+     */
     list_t *z = NULL;
     if (g)
     {
@@ -161,6 +164,7 @@ extern list_t *parse_args(char **v, list_t *a)
         if (line[0] != '#' && line[0] != '\n')
         {
             char *l = strdup(line);
+            char *p = l;
             char *o = strdup(strsep(&l, " \t\n\r#"));
             char *v = strdup(strsep(&l, "\n\r#")); /* don't delimit by space this time, only end of line or start of comment */
 
@@ -176,6 +180,7 @@ extern list_t *parse_args(char **v, list_t *a)
             }
             free(o);
             free(v);
+            free(p);
         }
     }
     free(line);
