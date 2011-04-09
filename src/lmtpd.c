@@ -94,6 +94,8 @@ int main(int argc, char **argv)
 
     lmtpd_daemonize(daemonize, o_port.found ? strtol(o_port.option, NULL, 0) : DEFAULT_PORT, o_local_only.found ? !DEFAULT_LOCAL : DEFAULT_LOCAL);
 
+    list_delete(&opts);
+
     while (true)
         sleep(1);
 
