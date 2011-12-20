@@ -20,7 +20,6 @@
 
 #include "common.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -30,11 +29,15 @@
 #include <errno.h>
 #include <time.h>
 
+#ifdef WIN32
+char *program_invocation_short_name = NULL;
+#endif
+
 static bool c_sig = false;
 /*@null@*/static char *c_app = NULL;
 /*@null@*/static char *c_ver = NULL;
 
-extern list_t *init6(const char * const restrict a, const char * const restrict v, char **g, const char * const restrict c, list_t *o, const char * const restrict m)
+extern list_t *init7(const char * const restrict a, const char * const restrict v, const char * const restrict u, char **g, const char * const restrict c, list_t *o, const char * const restrict m)
 {
     errno = 0;
     if (c_app)
@@ -80,7 +83,15 @@ extern list_t *init6(const char * const restrict a, const char * const restrict 
         list_t *y = list_create(NULL);
         if (c)
         {
-            y = parse_config(c, d);
+            const char *cf = c;
+            if (conf.found && strcmp(c, conf.option))
+            {
+                log_message(LOG_DEFAULT, "Using non-standard config file : %s", conf.option);
+                cf = conf.option;
+            }
+            else
+                log_message(LOG_VERBOSE, "Using default config file : %s", c);
+            y = parse_config(cf, d);
             /*
              * reparse command line arguments as they should always override config file settings
              */
@@ -92,10 +103,10 @@ extern list_t *init6(const char * const restrict a, const char * const restrict 
         if (version.found)
             show_version();
         if (help.found)
-            show_help(o, m);
+            show_help(u, o, m);
         if (debug.found && quiet.found)
             die("please use either debug or quiet not both");
-        log_e l = LOG_DEBUG;
+        log_e l = LOG_DEFAULT;
         if (debug.found)
         {
             if (debug.option)
@@ -165,8 +176,8 @@ extern list_t *parse_args(char **v, list_t *a)
         {
             char *l = strdup(line);
             char *p = l;
-            char *o = strdup(strsep(&l, " \t\n\r#"));
-            char *v = strdup(strsep(&l, "\n\r#")); /* don't delimit by space this time, only end of line or start of comment */
+            char *o = strdup(strtok(l, " \t\n\r#"));
+            char *v = strdup(strtok(NULL, "\n\r#")); /* don't delimit by space this time, only end of line or start of comment */
 
             for (uint16_t j = 0; j < expected; j++)
             {
@@ -194,10 +205,10 @@ extern void show_licence(void)
     exit(EXIT_SUCCESS);
 }
 
-extern void show_usage(void)
+extern void show_usage(const char * const restrict u)
 {
     fprintf(stderr, _("Usage:\n"));
-    fprintf(stderr, _("  %s [OPTION]...\n"), c_app);
+    fprintf(stderr, _("  %s %s\n"), c_app, u ? : "[OPTION] ...");
     exit(EXIT_SUCCESS);
 }
 
@@ -207,11 +218,11 @@ extern void show_version(void)
     exit(EXIT_SUCCESS);
 }
 
-extern void show_help(list_t *l, const char * const restrict m)
+extern void show_help(const char * const restrict u, list_t *l, const char * const restrict m)
 {
     fprintf(stderr, _("%s version : %s\n%*s built on: %s %s\n"), c_app, c_ver, (int)strlen(c_app), "", __DATE__, __TIME__);
     fprintf(stderr, _("Usage:\n"));
-    fprintf(stderr, _("  %s [OPTION]...\n"), c_app);
+    fprintf(stderr, _("  %s %s...\n"), c_app, u ? : "[OPTION] ...");
     fprintf(stderr, "\nOptions:\n\n");
     int lm = list_size(l);
     int w = 0;
@@ -225,6 +236,7 @@ extern void show_help(list_t *l, const char * const restrict m)
         args_t *arg = list_get(l, i);
         fprintf(stderr, "  -%c, --%-*s  %s  %s\n", arg->short_option, w, arg->long_option, arg->has_option ? "*" : " ", arg->message);
     }
+    fprintf(stderr, "\n  * Denotes mandatory argument\n");
     if (m)
         fprintf(stderr, "\n%s\n", m);
     exit(EXIT_SUCCESS);
@@ -252,8 +264,8 @@ extern void sigint(int s)
         default:
             ss = strdup(_("UNKNOWN"));
     }
-    log_message(LOG_INFO, _("caught and ignoring %s signal"), ss);
-    log_message(LOG_INFO, _("try again once more to force quit"));
+    log_message(LOG_WARNING, _("caught and ignoring %s signal"), ss);
+    log_message(LOG_WARNING, _("try again once more to force quit"));
     free(ss);
     c_sig = true;
 }
@@ -265,8 +277,18 @@ extern void die(const char * const restrict s, ...)
         char *d = NULL;
         va_list ap;
         va_start(ap, s);
+#ifndef _WIN32
         vasprintf(&d, s, ap);
         log_message(LOG_FATAL, d);
+#else
+        uint8_t l = 0xFF;
+        d = calloc(l, sizeof( uint8_t ));
+        if (d)
+            vsnprintf(d, l - 1, s, ap);
+        log_message(LOG_FATAL, d);
+        if (d)
+            free(d);
+#endif
         va_end(ap);
     }
     if (errno)
@@ -277,61 +299,33 @@ extern void die(const char * const restrict s, ...)
         log_message(LOG_FATAL, "%s", e);
         free(e);
     }
+    /*
+     * TODO if running a GUI don't necessarily exit with alerting the user first
+     * Users seem to dislike applications just quitting for no apparent reason!
+     */
     exit(errno);
 }
 
-extern void chill(uint32_t s)
+extern void chill(uint32_t m)
 {
-    div_t a = div(s, 1000);
+#ifndef _WIN32
+    div_t a = div(m, 1000);
     struct timespec t = {a.quot, a.rem * TEN_MILLION};
     struct timespec r = {0, 0};
     do
         nanosleep(&t, &r);
     while (r.tv_sec > 0 && r.tv_nsec > 0);
+#endif
 }
 
-extern endian_e get_endian(void)
-{
-   uint64_t i = 0x1;
-   char *p = (char *)&i;
-   /*
-    * TODO check for middle endian
-    */
-   if (p[0] == 0x1) /* lowest address contains the least significant byte */
-      return ENDIAN_LITTLE;
-   else
-      return ENDIAN_BIG;
-}
-
-__inline__ uint64_t to_big_endian(uint64_t i)
-{
-    switch (get_endian())
-    {
-        case ENDIAN_BIG:
-            break;
-        case ENDIAN_LITTLE:
-            i = (i >> 56) | 
-               ((i << 40) & 0x00FF000000000000LL) |
-               ((i << 24) & 0x0000FF0000000000LL) |
-               ((i <<  8) & 0x000000FF00000000LL) |
-               ((i >>  8) & 0x00000000FF000000LL) |
-               ((i >> 24) & 0x0000000000FF0000LL) |
-               ((i >> 40) & 0x000000000000FF00LL) |
-                   (i << 56);
-           break;
-        default:
-            log_message(LOG_WARNING, "nothing done");
-            break;
-    }
-    return i;
-}
-
-#ifndef _GNU_SOURCE
+#if !defined(_GNU_SOURCE) || defined(_WIN32)
 extern ssize_t getline(char **lineptr, size_t *n, FILE *stream)
 {
     size_t r = 0;
     uint32_t step = 0xFF;
     char *buffer = malloc(step);
+    if (!buffer)
+        die("out of memory @ %s:%d:%s [%d]", __FILE__, __LINE__, __func__, step);
     for (r = 0; ; r++)
     {
         int c = fgetc(stream);
@@ -343,7 +337,8 @@ extern ssize_t getline(char **lineptr, size_t *n, FILE *stream)
         if (r >= step - 0x10)
         {
             step += 0xFF;
-            buffer = realloc(buffer, step);
+            if (!(buffer = realloc(buffer, step)))
+                die("out of memory @ %s:%d:%s [%d]", __FILE__, __LINE__, __func__, step);
         }
     }
     if (*lineptr)
@@ -351,5 +346,64 @@ extern ssize_t getline(char **lineptr, size_t *n, FILE *stream)
     *lineptr = buffer;
     *n = r;
     return r;
+}
+#endif
+
+#ifdef _WIN32
+extern ssize_t pread(int filedes, void *buffer, size_t size, off_t offset)
+{
+    off_t o = lseek(filedes, 0, SEEK_CUR);
+    lseek(filedes, offset, SEEK_SET);
+    ssize_t s = read(filedes, buffer, size);
+    lseek(filedes, o, SEEK_SET);
+    return s;
+}
+
+extern ssize_t pwrite(int filedes, const void *buffer, size_t size, off_t offset)
+{
+    off_t o = lseek(filedes, 0, SEEK_CUR);
+    lseek(filedes, offset, SEEK_SET);
+    ssize_t s = write(filedes, buffer, size);
+    lseek(filedes, o, SEEK_SET);
+    return s;
+}
+
+/*
+ * Copyright (C) 2001 Federico Di Gregorio <fog@debian.org> 
+ * Copyright (C) 1991, 1994-1999, 2000, 2001 Free Software Foundation, Inc.
+ *
+ * This code has been derived from an example in the glibc2 documentation.
+ * This file is part of the psycopg module.
+ */
+int asprintf(char **buffer, char *fmt, ...)
+{
+    /* guess we need no more than 200 chars of space */
+    int size = 200;
+    int nchars;
+    va_list ap;
+    
+    if (!(*buffer = (char *)malloc(size)))
+        die("out of memory @ %s:%d:%s [%d]", __FILE__, __LINE__, __func__, size);
+          
+    va_start(ap, fmt);
+    nchars = vsnprintf(*buffer, size, fmt, ap);
+    va_end(ap);
+
+    if (nchars >= size)
+    {
+        char *tmpbuff;
+        size = nchars + 1;
+        if (!(tmpbuff = (char *)realloc(*buffer, size)))
+            die("out of memory @ %s:%d:%s [%d]", __FILE__, __LINE__, __func__, size);
+
+        *buffer = tmpbuff;
+
+        va_start(ap, fmt);
+        nchars = vsnprintf(*buffer, size, fmt, ap);
+        va_end(ap);
+    }
+    if (nchars < 0)
+        return nchars;
+    return size;
 }
 #endif
