@@ -10,7 +10,7 @@ CONF     = lmtpd.conf
 INIT_S   = lmtpd
 INIT_L   = lmtpd.init
 
-CFLAGS   = -Wall -Wextra -Wno-unused-parameter -O0 -std=gnu99 `libgcrypt-config --cflags` -c -ggdb -o
+CFLAGS   = -Wall -Wextra -Wno-unused-parameter -O0 -std=gnu99 `libgcrypt-config --cflags` -c -o
 CPPFLAGS = -I. -Isrc -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
 LDFLAGS  = -r -o
 
