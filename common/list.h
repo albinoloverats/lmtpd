@@ -122,7 +122,7 @@
      *
      * Append a new object onto the tail end of the list
      */
-    extern void list_append(list_t **l, const void * const restrict o) __attribute__((nonnull(1, 2)));
+    extern void list_append(list_t **l, void * const restrict o) __attribute__((nonnull(1, 2)));
 
     /*!
      * \brief         Remove i'th object from a list
