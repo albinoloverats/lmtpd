@@ -1,6 +1,6 @@
 /*
  * lmtpd ~ a simple local mail transfer protocol daemon for msmtp
- * Copyright (c) 2007-2010, albinoloverats ~ Software Development
+ * Copyright (c) 2007-2011, albinoloverats ~ Software Development
  * email: lmtpd@albinoloverats.net
  *
  * This program is free software: you can redistribute it and/or modify
@@ -45,14 +45,16 @@ static char *root_alias = DEFAULT_ROOT;
 static char *mbox_dir = DEFAULT_MBOX;
 
 static uint16_t original_socket = 0;
-static int64_t lock_file = 0;
+static int64_t fd_pidfile = 0;
+static char *nm_pidfile = NULL;
 
 int main(int argc, char **argv)
 {
     /*
      * handle command line arguments
      */
-    args_t o_logfile    = {'f', CONF_LOG ,   false, true,  NULL, "Log file to send messages to"};
+    args_t o_pidfile    = {'k', CONF_PID,    false, true,  NULL, "PID lock file"};
+    args_t o_logfile    = {'f', CONF_LOG,    false, true,  NULL, "Log file to send messages to"};
     args_t o_port       = {'p', CONF_PORT,   false, true,  NULL, "Local port to listen on"};
     args_t o_local_only = {'x', CONF_LOCAL,  false, false, NULL, "Force localhost connections only; this is the default"};
     args_t o_daemonize  = {'b', CONF_DAEMON, false, false, NULL, "Background/Daemonize process; this is the default"};
@@ -61,6 +63,7 @@ int main(int argc, char **argv)
 
     list_t *opts = list_create(NULL);
 
+    list_append(&opts, &o_pidfile);
     list_append(&opts, &o_logfile);
     list_append(&opts, &o_port);
     list_append(&opts, &o_local_only);
@@ -68,14 +71,15 @@ int main(int argc, char **argv)
     list_append(&opts, &alias);
     list_append(&opts, &mbox);
 
-    init(NAME, VERSION, argv, CONFIG_FILE, opts, HELP_INFO);
+    init(LMTPD_NAME, LMTPD_VERSION, USAGE_STRING, argv, CONFIG_FILE, opts, HELP_INFO);
 
     /*
-     *get hold of lock file
+     * get hold of pid/lock file
      */
-    lock_file = open(LOCK_FILE, O_WRONLY | O_TRUNC | O_CREAT | F_WRLCK, S_IRUSR | S_IWUSR);
-    if (lock_file < 0)
-        die("cannot acquire file lock, check %s isn't already running and try again", NAME);
+    nm_pidfile = o_pidfile.found ? o_pidfile.option : DEFAULT_PID;
+    fd_pidfile = open(nm_pidfile, O_WRONLY | O_TRUNC | O_CREAT | F_WRLCK, S_IRUSR | S_IWUSR);
+    if (fd_pidfile < 0)
+        die("cannot acquire file lock, check %s isn't already running and try again", LMTPD_NAME);
 
     if (alias.found)
         root_alias = strdup(alias.option);
@@ -126,13 +130,10 @@ static void lmtpd_daemonize(bool do_fork, uint16_t port, bool local_only)
         die("could not set custom signal handler");
     signal(SIGCHLD, SIG_IGN);
     setsid();
-    {
-        char *p = NULL;
-        asprintf(&p, "%d\n", getpid());
-        if (!p)
-            die("out of memory @ %s:%i", __FILE__, __LINE__ - 2);
-        write(lock_file, p, strlen(p));
-    }
+
+    char p[8]; /* just big enough for a pid */
+    snprintf(p, sizeof p, "%d\n", getpid());
+    write(fd_pidfile, p, strlen(p));
 
     uint16_t original_socket = socket_create(port);
     if (listen(original_socket, 1) < 0)
@@ -143,7 +144,7 @@ static void lmtpd_daemonize(bool do_fork, uint16_t port, bool local_only)
     {
         struct sockaddr_in client;
         char caddr[INET_ADDRSTRLEN];
-        uint32_t z = sizeof( client );
+        uint32_t z = sizeof client;
         int32_t n = accept(original_socket, (struct sockaddr *)&client, &z);
         if (n < 0)
             die("could not accept on socket");
@@ -167,7 +168,8 @@ static void lmtpd_daemonize(bool do_fork, uint16_t port, bool local_only)
             close(n);
         else /* spawn child prcess for connection */
         {
-            close(original_socket);
+            if (do_fork)
+                close(original_socket);
             message_recieve(n);
             log_message(LOG_DEFAULT, "closed connection with %s:%hu", caddr, ntohs(client.sin_port));
             close(n);
@@ -197,8 +199,8 @@ static void lmtpd_stop(int s)
     }
     log_message(LOG_WARNING, "caught %s signal, closing gracefully", ss);
     close(original_socket);
-    close(lock_file);
-    unlink(LOCK_FILE);
+    close(fd_pidfile);
+    unlink(nm_pidfile);
     errno = ECANCELED;
     exit(EXIT_SUCCESS);
 }
@@ -212,7 +214,7 @@ static uint16_t socket_create(uint16_t p)
     name.sin_family = AF_INET;
     name.sin_port = htons(p);
     name.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(s, (struct sockaddr *)&name, sizeof( name )) < 0)
+    if (bind(s, (struct sockaddr *)&name, sizeof name) < 0)
         die("could not bind socket");
     return (uint16_t)s;
 }
@@ -264,13 +266,12 @@ static void socket_send(int s, char *m)
 
 static void message_recieve(int32_t s)
 {
-    char *r;
     size_t l = 0;
     time_t date = time(NULL);
 
     /* send greeting, wait for response */
     socket_send(s, MESSAGE_220);
-    r = socket_read(s, &l);
+    char *r = socket_read(s, &l);
     validate(MESSAGE_LHLO, r);
     char *cname = strdup(r + strlen(MESSAGE_LHLO));
     free(r);
@@ -356,15 +357,18 @@ static void message_recieve(int32_t s)
     /*
      * TODO if To: address contains @domain.example.com
      * forward the message to an actual outbound mail hander
+     * -- and--
+     * check if the domain/host is localhost (or local hostname)
      */
     for (unsigned i = 0; i < rcpts; i++)
     {
-        char *usr = list_get(rcpt, i);
+        char *emadr = (char *)list_get(rcpt, i);
+        char *at = strchrnul(emadr, '@');
+        char *usr = strndup(emadr, at - emadr);
+
         /* lookup the user; if root, find alias instead */
         if (!strcmp(ROOT, usr))
-        {
             usr = root_alias;
-        }
         struct passwd *pw = getpwnam(usr);
         if (!pw)
             continue;
@@ -383,10 +387,9 @@ static void message_recieve(int32_t s)
         fchown(mbox, uid, gid);
         fchmod(mbox, S_IRUSR | S_IWUSR);
         close(mbox);
-        free(list_remove(&rcpt, i));
         free(mesg);
     }
-    list_delete(&rcpt);
+    list_delete(&rcpt, true);
     free(from);
     free(data);
 }
@@ -409,9 +412,7 @@ static uint8_t convert_double_dot(char *r)
 {
     uint8_t dd = 0;
     if (!strncmp(DOUBLE_DOT, r, strlen(DOUBLE_DOT)))
-    {
         dd = 1;
-    }
     return dd;
 }
 

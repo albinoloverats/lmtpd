@@ -1,6 +1,6 @@
 /*
  * lmtpd ~ a simple local mail transfer protocol daemon for msmtp
- * Copyright (c) 2007-2010, albinoloverats ~ Software Development
+ * Copyright (c) 2007-2011, albinoloverats ~ Software Development
  * email: lmtpd@albinoloverats.net
  *
  * This program is free software: you can redistribute it and/or modify
@@ -21,10 +21,11 @@
 #ifndef _LMTPD_H_
 #define _LMTPD_H_
 
-#define NAME "lmtpd"
-#define VERSION "201103"
+#define LMTPD_NAME "lmtpd"
+#define LMTPD_VERSION "201201"
 
-#define HELP_INFO "TODO ..."
+#define USAGE_STRING "TODO  #1"
+#define HELP_INFO "TODO #2"
 
 #include <inttypes.h>
 #include <stdbool.h>
@@ -33,6 +34,9 @@
  * config file parameter names and defaults
  */
 #define CONFIG_FILE "/etc/lmtpd.conf"
+
+#define CONF_PID "pid_file"
+#define DEFAULT_PID "/var/run/lmtpd.pid"
 
 #define CONF_LOG "log_file"
 #define DEFAULT_LOG "/var/log/lmtpd.log"
@@ -55,8 +59,7 @@
 /*
  * misc constants
  */
-#define RUN_DIR "/var/lock/"
-#define LOCK_FILE RUN_DIR "lmtpd"
+#define RUN_DIR "/var/run/"
 
 #define LOCALHOST "127.0.0.1"
 #define BUFFER 1024
