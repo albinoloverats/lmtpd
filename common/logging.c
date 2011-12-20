@@ -19,6 +19,7 @@
  */
 
 #include "logging.h"
+#include "common.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,12 +29,18 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <sys/types.h>
+#include <time.h>
+
+#ifdef WIN32
+extern char *program_invocation_short_name;
+#endif
 
 /*@null@*/static FILE *log_destination = NULL;
 static log_e log_current_level = LOG_INFO;
 
 static const char *LOG_LEVELS[] =
 {
+    "EVERYTHING",
     "VERBOSE",
     "DEBUG",
     "INFO",
@@ -67,8 +74,10 @@ extern void log_relevel(log_e l)
     log_current_level = l;
 }
 
-extern void log_binary(log_e l, void *v, uint64_t s)
+extern void log_binary(log_e l, const void * const restrict v, uint64_t s)
 {
+    if (s < 1)
+        return;
     const uint8_t * const z = v;
     char b[LOG_BINARY_LINE_WIDTH] = { 0x00 };
     uint8_t c = 1;
@@ -78,7 +87,7 @@ extern void log_binary(log_e l, void *v, uint64_t s)
         {
             c = 1;
             log_message(l, "%s", b);
-            memset(b, 0x00, sizeof( b ));
+            memset(b, 0x00, sizeof b);
         }
         sprintf(b, "%s%02X%s", b, z[i], (c % sizeof( uint32_t )) ? "" : " ");
     }
@@ -107,7 +116,10 @@ extern void log_message(log_e l, const char * const restrict s, ...)
         flockfile(f);
         if (f == stderr)
             fprintf(f, "\r%s: ", program_invocation_short_name);
-        fprintf(f, "(%d) [%s] ", getpid(), LOG_LEVELS[l]);
+        char dtm[20];
+        time_t tm = time(NULL);
+        strftime(dtm, sizeof dtm, "%Y-%m-%d %T", localtime(&tm));
+        fprintf(f, "[%s] (%d) [%s] ", dtm, getpid(), l < LOG_LEVEL_COUNT ? LOG_LEVELS[l] : "(unknown)");
         vfprintf(f, s, ap);
         fprintf(f, "\n");
         fflush(f);

@@ -33,13 +33,22 @@
 
     #include <inttypes.h>
 
-    #ifndef LOG_DEFAULT
-        #define LOG_DEFAULT LOG_INFO /*!< The default log level */
+    #ifdef _WIN32
+        #define flockfile(f)   (void)f /*!< Function doesn't exist on Windows - ginore it */
+        #define funlockfile(f) (void)f /*!< Function doesn't exist on Windows - ginore it */
     #endif
 
-    #define LOG_BINARY_LINE_WIDTH 72 /*!< Maximum line width for hex() output */
+    #ifndef LOG_DEFAULT
+        #ifdef DEBUGGING
+            #define LOG_DEFAULT LOG_DEBUG /*!< The default log level, if not already defined and DEBUGGING is defined */
+        #else
+            #define LOG_DEFAULT LOG_INFO /*!< The default log level, if not already defined */
+        #endif
+    #endif
 
-    #define LOG_BINARY_LINE_WRAP  24 /*!< Wrap hex() output after this many bytes (and spaces between words, etc) */
+    #define LOG_BINARY_LINE_WIDTH 72 /*!< Maximum line width for log_binary() output */
+
+    #define LOG_BINARY_LINE_WRAP  16 /*!< Wrap log_binary() output after this many bytes (and spaces between words, etc) */
 
 
     /*!
@@ -49,13 +58,14 @@
      */
     typedef enum log_e
     {
-        LOG_VERBOSE, /*!< Really verbose logging */
-        LOG_DEBUG,   /*!< Minimum level with debugging turned on */
-        LOG_INFO,    /*!< Default minimum log level */
-        LOG_WARNING, /*!< Warning level of logging */
-        LOG_ERROR,   /*!< Error log level */
-        LOG_FATAL,   /*!< Fatal event occured, used by die() */
-        LOG_LEVEL_COUNT
+        LOG_EVERYTHING, /*!< Log out everything (use with caution) */
+        LOG_VERBOSE,    /*!< Really verbose logging */
+        LOG_DEBUG,      /*!< Minimum level with debugging turned on */
+        LOG_INFO,       /*!< Default minimum log level */
+        LOG_WARNING,    /*!< Warning level of logging */
+        LOG_ERROR,      /*!< Error log level */
+        LOG_FATAL,      /*!< Fatal event occured, used by die() */
+        LOG_LEVEL_COUNT /*!< The number of available log levels */
     } __attribute__((packed))
     log_e;
 
@@ -94,7 +104,7 @@
      * Trace out the bytes (displayed as hexadecimal values) in the byte array
      * of the given length. Output is to either a logfile or stderr
      */
-    extern void log_binary(log_e l, void *v, uint64_t s) __attribute__((nonnull(2)));
+    extern void log_binary(log_e l, const void * const restrict v, uint64_t s) __attribute__((nonnull(2)));
 
     /*!
      * \brief         Display messages to the user on STDERR
