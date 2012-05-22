@@ -170,7 +170,7 @@ static void lmtpd_daemonize(bool do_fork, uint16_t port, bool local_only)
         {
             if (do_fork)
                 close(original_socket);
-            message_recieve(n);
+            message_receive(n);
             log_message(LOG_DEFAULT, "closed connection with %s:%hu", caddr, ntohs(client.sin_port));
             close(n);
             if (do_fork)
@@ -264,7 +264,7 @@ static void socket_send(int s, char *m)
     free(d);
 }
 
-static void message_recieve(int32_t s)
+static void message_receive(int32_t s)
 {
     size_t l = 0;
     time_t date = time(NULL);
